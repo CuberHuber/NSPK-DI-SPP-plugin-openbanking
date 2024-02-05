@@ -4,21 +4,15 @@
 1/2 документ плагина
 """
 import datetime
-import itertools
 import logging
-import os
-import re
 import time
 
 import dateutil.parser
+from selenium.common import NoSuchElementException
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as ec
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.common import NoSuchElementException
 
 from src.spp.types import SPP_document
-
 
 
 class OpenBanking:
@@ -37,7 +31,7 @@ class OpenBanking:
     _content_document: list[SPP_document]
     HOST = 'https://openbanking.atlassian.net/wiki/spaces/DZ/pages'
 
-    def __init__(self, webdriver: WebDriver, *args, **kwargs):
+    def __init__(self, webdriver: WebDriver, max_count_documents: int = 100, *args, **kwargs):
         """
         Конструктор класса парсера
 
@@ -48,6 +42,7 @@ class OpenBanking:
         self._content_document = []
 
         self.driver = webdriver
+        self.max_count_documents = max_count_documents
 
         # Логер должен подключаться так. Вся настройка лежит на платформе
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -78,20 +73,19 @@ class OpenBanking:
         # ========================================
         # Тут должен находится блок кода, отвечающий за парсинг конкретного источника
         # -
-        self.driver.set_page_load_timeout(40)
+        self.driver.set_page_load_timeout(60)
         self._initial_access_source(self.HOST, 5)
 
         weblinks = self._load_all_contents()
 
-        for link in weblinks:
+        for index, link in enumerate(weblinks):
+            # Ограничение парсинга до установленного параметра self.max_count_documents
+            if index >= self.max_count_documents:
+                self.logger.debug(f'Max count documents reached ({self.max_count_documents})')
+                break
             self._parse_page(link)
-
-        # Логирование найденного документа
-        # self.logger.info(self._find_document_text_for_logger(document))
-
         # ---
         # ========================================
-        ...
 
     def _load_all_contents(self):
         last_content_length = 0
@@ -104,8 +98,8 @@ class OpenBanking:
                 time.sleep(2)
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
-                blocks = self.driver.find_elements(By.XPATH, '//*[@id="content-body"]/div/div[3]/div[1]/div')
                 time.sleep(4)
+                blocks = self.driver.find_elements(By.XPATH, '//*[@id="content-body"]/div/div[3]/div[1]/div')
                 if len(blocks) > last_content_length:
                     last_content_length = len(blocks)
                     self.logger.debug('Continue scroll')
@@ -175,7 +169,7 @@ class OpenBanking:
 
     def _initial_access_source(self, url: str, delay: int = 2):
         self.driver.get(url)
-        self.logger.debug('Entered on web page', url)
+        self.logger.debug('Entered on web page '+url)
         time.sleep(delay)
 
     def date(self) -> datetime.datetime:
